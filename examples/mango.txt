@@ -1,0 +1,81 @@
+\title Mango: taitto-ohjelma
+
+Mango on tekemäni taitto-ohjelma. Tässä dokumentissa on listattu sen ominaisuuksia.
+
+\subtitle Ominaisuudet
+
+-| ranskalaiset viivat saa kirjoittamalla rivin alkuun {-} ja putken
+-| numeroinnin saa kirjoittamalla rivin alkuun {1.}, {2.}, jne. ja putken
+-| iso otsikko on rivin alussa {\title}, pieni {\subtitle} ja vielä pienempi {\subsubtitle}
+-| sivunvaihdon voi estää komennolla {\nopagebreak}
+
+\subtitle Taulukkoesimerkki
+
+\tablestart
+{Maa} | {Arvo} | {Kuvakortti?}
+Pata | 9 | ei
+Risti | 9 | ei
+Ruutu | 12 | kyllä
+Ruutu | 13 | kyllä
+\tablestop
+
+Klingonin kieliopista:
+
+\tablestart
+{jI}Sop. | Minä syön.
+Soj {vI}SoptaH. | Minä syön ruokaa.
+{qa}muS. | Minä vihaan sinua.
+{bI}’IHqu’. | Olet todella kaunis.
+{yI}mej! | Lähde!
+{tI}HoH! | Tapa heidät!
+\tablestop
+
+DuSaQDaq
+
+\title SUOMALAINEN PSYKOTERAPIAIDENTITEETTI
+
+\nopagebreak
+{Tutkielmassa} tarkastellaan psykoterapiaidentiteettiä Suomessa,
+erityisesti Suomessa sekä vertaillaan eri hoitomuotoja
+keskenään. Tutkielmassa tarkastellaan myös, miten psykoterapiat
+vaikuttavat työolosuhteisiin ja miten ne liittyvät toisiinsa.
+Lisäksi tutkitaan, millaisia kokemuksia psykoterapiamenetelmillä
+on eri hoitomuotojen esiintymisestä.
+
+Tutkielma perustuu vuosien 2007 ja 2015 aikana kerättyyn
+kyselyaineistoon, joka sisältää 3259 lomakevastausta. Tutkielman
+teoreettinen viitekehys perustuu psykoterapiatutkimuksen
+lähtökohtiin ja aikaisempiin tutkimuksiin ja teorioihin.
+
+\subtitle Tutkimuskysymykset
+
+\nopagebreak
+Tutkielman tutkimusongelma on seuraava:
+
+[1.]| Millaisia ovat psykoterapiaidentiteettien erilaiset ulottuvuudet ja miten ne eroavat toisistaan?
+[2.]| Millaisiin tapoihin ja keinoihin psykoterapiat ovat yhteydessä?
+[3.]| Miten kokemukset ja käsitykset eroavat toisistaan?
+
+\subtitle Tutkimusaineisto
+
+\nopagebreak
+Tutkielman aineisto koostuu psykoterapian tekijöiden ja
+työntekijöistä kerätystä kyselyaineistosta ([n]=87) sekä
+psykoterapeutin haastatteluista. Kyselyaineiston
+analyysimenetelmänä on sisällönanalyysi, jonka avulla
+aineistosta on saatu ymmärrystä ja tulkintoja.
+
+\subtitle Psykoterapia hoitomuotona
+
+\nopagebreak
+Psykoterapiat ovat luotettavia ja hyvin erilaisia kuin
+psykoterapiat ja työnjako. Ne ovat moniulotteisia ilmiöitä,
+jotka muodostavat palveluita, jotka eivät ole suoraan
+mitattavissa. Psykoterapiat ovat luonteeltaan moniulotteisia. Ne
+ovat osa sosiaalista todellisuutta ja nykyajan
+toimintaympäristöä, jossa vuorovaikutus ja vuorovaikutus ovat
+olennaisia. Psykoterapian menetelmä on moniulotteinen, mutta se
+perustuu yleensä havainnointiin ja haastatteluihin.
+Psykoterapiassa on monia menetelmiä, joiden avulla ymmärrystä ja
+tietoa voidaan käyttää asenteiden ja intuitiivisuuden
+tunnistamiseen.
