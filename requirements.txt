@@ -1,0 +1,7 @@
+cairocffi==1.2.0
+cffi==1.14.4
+numpy==1.19.4
+pangocairocffi==0.4.0
+pangocffi==0.8.0
+pycparser==2.20
+voikko==0.5
