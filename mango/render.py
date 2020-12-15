@@ -1,40 +1,61 @@
-from collections import defaultdict
 import copy
+import itertools
 import re
 from argparse import Namespace
+from collections import defaultdict
 from math import inf
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import cairocffi as cairo
 import numpy as np
 import pangocairocffi as pangocairo
 import pangocffi as pango
+from tqdm.cli import tqdm
 from voikko import libvoikko
 
-from .parser import DocumentObj, Paragraph, Table, fixMarkup, getBalance
+from .document import (Chapter, DocumentObj, Eval, Paragraph, Subenvironment,
+                       Table, VSpace, fixMarkup, stripMarkup)
+from .params import Parameters
 
 try:
     voikko = libvoikko.Voikko("fi")
 except:
     voikko = None
 
+debug = False
 
 def irange(a, b, s=1) -> range:
     return range(a, b+1 if s > 0 else b-1, s)
 
+FixXY = Callable[[float, float], Tuple[float, float]]
+
 class Line:
     outline: Optional[Tuple[int, str]]
-    def __init__(self, height: float, no_page_break=False):
+    def __init__(self, width: float, height: float, no_page_break=False):
         self.height = height
-        self.width = 0
+        self.width = width
+        self.indent = 0
         self.no_page_break = no_page_break
         self.outline = None
+        self.is_content_line = False
 
-    def draw(self, context: cairo.Context, x: float, y: float):
-        pass
+    def draw(self, context: cairo.Context, x: float, y: float, fxy: FixXY):
+        if debug:
+            context.set_source_rgb(1 if self.no_page_break else 0, 0, 0)
+            context.rectangle(*fxy(x-5, y), *fxy(2, 16))
+            context.fill()
+            context.set_source_rgb(0.5, 0.5, 0.5)
+            context.rectangle(*fxy(self.indent+x, y), *fxy(self.width, self.height))
+            context.stroke()
 
 class ParagraphGap(Line):
-    pass
+
+    def draw(self, context: cairo.Context, x: float, y: float, fxy: FixXY):
+        super().draw(context, x, y, fxy)
+        if debug:
+            context.set_source_rgb(1 if self.no_page_break else 0, 0, 0)
+            context.rectangle(*fxy(x, y), *fxy(10, 10))
+            context.fill()
 
 def stripGaps(lines: List[Line]) -> List[Line]:
     i = 0
@@ -57,40 +78,37 @@ def splitGaps(lines: List[Line]) -> List[List[Line]]:
     return pgs
 
 class TextLine(Line):
-    def __init__(self, surf: cairo.Surface, width: float, height: float, no_page_break=False):
+    def __init__(self, surf: cairo.Surface, width: float, height: float, indent:float=0.0, no_page_break=False):
         self.surf = surf
         self.width = width
         self.height = height
+        self.indent = indent
         self.no_page_break = no_page_break
         self.outline = None
+        self.is_content_line = True
     
-    def draw(self, context: cairo.Context, x: float, y: float):
-        context.set_source_surface(self.surf, x, y)
+    def draw(self, context: cairo.Context, x: float, y: float, fxy: FixXY):
+        super().draw(context, x, y, fxy)
+        context.set_source_surface(self.surf, *fxy(x+self.indent, y))
         context.paint()
         self.surf.finish()
 
-class EmptyLine(Line):
-    def __init__(self, width: float, height: float):
-        self.width = width
-        self.height = height
-        self.no_page_break = False
-        self.outline = None
-    
-    def draw(self, context: cairo.Context, x: float, y: float):
-        pass
-
 class ColumnLine(Line):
-    def __init__(self, columns: List[Line], pg_gap: float):
+    def __init__(self, columns: List[Line], pg_gap: float, indent:float=0.0):
         self.columns = columns
         self.column_gap = pg_gap
         self.width = pg_gap * (len(columns) - 1) + sum(l.width for l in columns)
         self.height = max(l.height for l in columns)
+        self.indent = indent
         self.no_page_break = any([l.no_page_break for l in columns])
         self.outline = None
+        self.is_content_line = True
     
-    def draw(self, context: cairo.Context, x: float, y: float):
+    def draw(self, context: cairo.Context, x: float, y: float, fxy: FixXY):
+        super().draw(context, x, y, fxy)
+        x += self.indent
         for column in self.columns:
-            column.draw(context, x, y)
+            column.draw(context, x, y, fxy)
             x += column.width
             x += self.column_gap
 
@@ -98,58 +116,89 @@ TITLES = {
     "title": (0, 20, 26, "center"),
     "subtitle": (1, 15, 21, "justify"),
     "subsubtitle": (2, 13, 19, "justify"),
+    "subsubsubtitle": (3, 12, 18, "justify"),
     "text": (-1, 10, 16, "justify"),
 }
 
-class Parameters:
-    def __init__(self, args: Namespace):
-        self.width = float(args.width)
-        self.height = float(args.height)
-        self.margin = float(args.margin)
-        self.line_width = float(self.width - 2 * self.margin)
-        self.line_height = float(16)
-        self.page_height = float(self.height - 2 * self.margin)
-        self.pg_gap = float(16)
-        self.column_gap = float(10)
-        self.text_align = "justify"
-
-        self.fontname = args.font
-        self.fonts = {}
-        self.fonts["rm"] = pango.FontDescription()
-        self.fonts["rm"].set_family(self.fontname)
-        self.fonts["rm"].set_size(pango.units_from_double(10))
-
-        print(f"Paperin koko {self.width}x{self.height}")
-        print(f"Piirtoalueen koko {self.line_width}x{self.page_height}")
-
 class draw:
-    def __init__(self, args: Namespace, paragraphs: List[DocumentObj]):
+    def __init__(self, args: Namespace, chapters: List[Chapter]):
+        global debug
+        debug = args.debug
+        
         print("Alustetaan...")
         self.params = Parameters(args)
         self.param_stack = []
 
-        self.balance = ""
+        self.page_direction = args.page_dir
 
-        self.surf = cairo.PDFSurface(args.outfile, args.width, args.height)
+        self.surf = cairo.PDFSurface(args.outfile, *self._fixXY(args.width, args.height))
         self.context = cairo.Context(self.surf)
 
-        self.context.rectangle(0,0,args.width,args.height)
+        #font_options = cairo.FontOptions()
+        #font_options.set_antialias(cairo.ANTIALIAS_NONE)
+        #self.context.set_font_options(font_options)
+
+        self.context.rectangle(0, 0, *self._fixXY(args.width, args.height))
         self.context.set_source_rgb(1, 1, 1)
         self.context.fill()
-        self.font = self.params.fonts["rm"]
 
         self.context.set_source_rgb(0, 0, 0)
+        
+        self.page = 1
+        self.last_title = defaultdict(lambda: 0)
 
+        for i, chapter in enumerate(chapters):
+            print(f"Piirretään kappale {i+1}...")
+            self.drawChapter(chapter)
+
+        self.surf.finish()
+    
+    def drawChapter(self, paragraphs: Chapter):
         print("Piirretään sanoja...")
-        all_lines = []
-        for i, pg in enumerate(paragraphs):
-            if i != 0:
-                all_lines.append(ParagraphGap(self.params.pg_gap, pg.no_page_break))
+        all_lines = self.paragraphsToLines(paragraphs)
+        print(f"Piirretty {len(all_lines)} riviä!")
+
+        print("Lasketaan sivunvaihdot...")
+        bps = self.calculatePageBreaks(all_lines)
+        print(f"Laskettu {len(bps)+1} sivua!")
+
+        print("Piirretään sivuja...")
+        for i, j in zip([0] + bps, bps + [len(all_lines)+1]):
+            lines = stripGaps(all_lines[i:j])
+            pgs = splitGaps(lines)
+            if j == len(all_lines) + 1 or len(pgs) == 1:
+                pg_gap = 0
+            else:
+                pg_gap = (self.params.page_height - sum(l.height for pg in pgs for l in pg)) / (len(pgs) - 1)
+
+            y = self.params.margin
+            for pg in pgs:
+                for line in pg:
+                    if line.outline:
+                        link = self.last_title[line.outline[0] - 1]
+                        self.last_title[line.outline[0]] = self.surf.add_outline(link, line.outline[1], f"page={self.page} pos=[{self.params.margin} {y}]")
+
+                    line.draw(self.context, self.params.margin, y, self._fixXY)
+                    y += line.height
+                
+                y += pg_gap
             
+            self.surf.show_page()
+            self.page += 1
+    
+    def paragraphsToLines(self, paragraphs: List[DocumentObj]):
+        all_lines: List[Line] = []
+        for i, pg in enumerate(paragraphs):
+            print(i+1, "/", len(paragraphs), end="\r")
+
             if isinstance(pg, Table):
-                level, font_size, self.line_height, self.params.text_align = TITLES["text"]
-                self.font.set_size(pango.units_from_double(font_size))
+                if all_lines and all_lines[-1].is_content_line:
+                    all_lines.append(ParagraphGap(0, self.params.pg_gap, pg.no_page_break))
+            
                 with self._stackFrame():
+                    self._getFont().set_size(pango.units_from_double(self.params.font_size))
+                    indent = self.params.indent
+                    self.params.resetLayout()
                     num_columns = max(len(row) for row in pg.rows)
                     max_line_width = self.params.line_width
                     self.params.line_width = (max_line_width - self.params.column_gap * (num_columns - 1)) / num_columns
@@ -157,8 +206,11 @@ class draw:
                     for i in range(num_columns):
                         max_width = 0
                         for j in range(len(pg.rows)):
-                            rendered_rows[j].append(self.textToLines(pg.rows[j][i]))
-                            width = rendered_rows[j][i][0].width
+                            if i >= len(pg.rows[j]):
+                                pg.rows[j].append(Paragraph.fromText(text=""))
+
+                            rendered_rows[j].append(self.paragraphsToLines([pg.rows[j][i]]))
+                            width = rendered_rows[j][i][0].width if rendered_rows[j][i] else 0
                             if width > max_width:
                                 max_width = width
                         
@@ -172,83 +224,69 @@ class draw:
                     lines = []
                     for rrow in rendered_rows:
                         for i in range(max(len(c) for c in rrow)):
-                            column_lines: List[Line] = [c[i] if i < len(c) else EmptyLine(c[0].width, self.line_height) for c in rrow]
-                            lines.append(ColumnLine(column_lines, self.params.column_gap))
-            
-            elif isinstance(pg, Paragraph):
-                level, font_size, self.line_height, self.params.text_align = TITLES[pg.type]
-                self.font.set_size(pango.units_from_double(font_size))
-
-                if len(pg.columns) == 1:
-                    lines = self.textToLines(pg.columns[0], hyphenate=level<0)
-                    lines[0].no_page_break = pg.no_page_break
-                    if level >= 0:
-                        lines[0].outline = (level, pg.columns[0])
+                            column_lines: List[Line] = [c[i] if i < len(c) else Line(c[0].width if c else 0, self.params.line_height) for c in rrow]
+                            lines.append(ColumnLine(column_lines, self.params.column_gap, indent=indent))
+                            lines[-1].no_page_break = pg.no_page_break
                 
-                else:
-                    with self._stackFrame():
-                        max_line_width = self.params.line_width
-                        self.params.line_width = (max_line_width - self.params.column_gap * (len(pg.columns) - 1)) / len(pg.columns)
-                        columns: List[List[Line]] = []
-                        for i, column in enumerate(pg.columns):
-                            columns.append(self.textToLines(column, hyphenate=level<0))
-                            width = columns[-1][0].width
-                            if i != len(pg.columns) - 1:
-                                self.params.line_width = (max_line_width - width - self.params.column_gap * (len(pg.columns) - i - 1)) / (len(pg.columns) - i - 1)
+            elif isinstance(pg, Paragraph):
+                if all_lines and all_lines[-1].is_content_line:
+                    all_lines.append(ParagraphGap(0, self.params.pg_gap, pg.no_page_break))
+            
+                with self._stackFrame():
                     
-                        lines = []
-                        for i in range(max(len(c) for c in columns)):
-                            column_lines: List[Line] = [c[i] if i < len(c) else EmptyLine(c[0].width, self.line_height) for c in columns]
-                            lines.append(ColumnLine(column_lines, self.params.column_gap))
+                    if pg.type != "text":
+                        level, self.params.font_size, self.params.line_height, self.params.text_align = TITLES[pg.type]
+                    
+                    else:
+                        level = -1
+                    
+                    self._getFont().set_size(pango.units_from_double(self.params.font_size))
+
+                    lines = self.textToLines(pg.text, hyphenate=level<0)
+                    if lines:
+                        lines[0].no_page_break = pg.no_page_break
+                        if level >= 0:
+                            lines[0].outline = (level, pg.text)
+                        
+                        if "title" in pg.type:
+                            for line in lines[1:]:
+                                line.no_page_break = True
+            
+            elif isinstance(pg, VSpace):
+                lines = [Line(self.params.line_width, pg.height or self.params.line_height)]
+                
+            elif isinstance(pg, Eval):
+                pg.func(self.params)
+                lines = []
+            
+            elif isinstance(pg, Subenvironment):
+                with self._stackFrame():
+                    lines = self.paragraphsToLines(pg.paragraphs)
+            
+            else:
+                print(f"Tuntematon kappaletyyppi {type(pg)}")
+                lines = []
             
             all_lines += lines
 
-        print("Lasketaan sivunvaihdot...")
-        bps = self.calculatePageBreaks(all_lines)
+        return all_lines
 
-        print("Piirretään rivejä...")
-        page = 1
-        last_title = defaultdict(lambda: 0)
-        for i, j in zip([0] + bps, bps + [len(all_lines)+1]):
-            lines = stripGaps(all_lines[i:j])
-            pgs = splitGaps(lines)
-            if j == len(all_lines) + 1 or len(pgs) == 1:
-                pg_gap = 0
-            else:
-                pg_gap = (self.params.page_height - sum(l.height for pg in pgs for l in pg)) / (len(pgs) - 1)
-
-            y = self.params.margin
-            for pg in pgs:
-                for line in pg:
-                    if line.outline:
-                        link = last_title[line.outline[0] - 1]
-                        last_title[line.outline[0]] = self.surf.add_outline(link, line.outline[1], f"page={page} pos=[{self.params.margin} {y}]")
-
-                    line.draw(self.context, self.params.margin, y)
-                    y += line.height
-                
-                y += pg_gap
-            
-            self.surf.show_page()
-            page += 1
-
-        self.surf.finish()
-
-    def createLayout(self, text: str, balance=True) -> pango.Layout:
-        if balance:
-            text = self.balance + text
-            self.balance = getBalance(text)
-
+    def createLayout(self, text: str) -> pango.Layout:
         layout = pangocairo.create_layout(self.context)
-        layout.set_font_description(self.font)
+        layout.set_font_description(self._getFont())
         layout.set_markup(fixMarkup(text))
         return layout
     
-    def textToLines(self, text: str, equal_widths=True, hyphenate=True) -> List[Line]:
+    def textToLines(self, text: str, **args) -> List[Line]:
+        return list(itertools.chain(*[self.textWithoutNewlinesToLines(t, **args) for t in text.split("\n")]))
+    
+    def textWithoutNewlinesToLines(self, text: str, equal_widths=True, hyphenate=True) -> List[Line]:
+        if text.strip() == "":
+            return [Line(0, self.params.line_height)]
+
         ans = []
-        layouts = [(word, self.createLayout(word)) for word in text.split()]
+        layouts = [(word, self.createLayout(word)) for word in text.split(" ")]
         
-        min_word_gap = 5
         while layouts:
             surf = cairo.RecordingSurface(cairo.CONTENT_ALPHA, None)
             context = cairo.Context(surf)
@@ -258,24 +296,26 @@ class draw:
             il = []
             wsum = 0
             for word, layout in layouts:
-                _, _, w, _ = getLayoutExtent(layout)
-                if wsum + len(il) * min_word_gap + w > self.params.line_width:
+                _, _, w, h = getLayoutExtent(layout)
+                w, h = self._fixXY(w, h)
+                if wsum + len(il) * self.params.min_word_gap + w > self.params.line_width:
                     if hyphenate and voikko and "-" not in word:
                         syllables = re.split(r"-", voikko.hyphenate(word))
                         for j in range(len(syllables), 0, -1):
                             text = "".join(syllables[0:j])
-                            if len(text) == 1:
+                            if len(stripMarkup(text)) <= 1:
                                 break
 
-                            new_l = self.createLayout(text + "-", balance=False)
-                            _, _, new_w, _ = getLayoutExtent(new_l)
-                            if wsum + len(il) * min_word_gap + new_w <= self.params.line_width:
+                            new_l = self.createLayout(text + "-")
+                            _, _, new_w, new_h = getLayoutExtent(new_l)
+                            new_w, new_h = self._fixXY(new_w, new_h)
+                            if wsum + len(il) * self.params.min_word_gap + new_w <= self.params.line_width:
                                 il.append(new_l)
                                 wsum += new_w
                                 layout.set_markup(fixMarkup("".join(syllables[j:])))
                                 break
 
-                    word_gap = (self.params.line_width - wsum) / (len(il) - 1) if len(il) > 1 else min_word_gap
+                    word_gap = (self.params.line_width - wsum) / (len(il) - 1) if len(il) > 1 else self.params.min_word_gap
                     break
 
                 il.append(layout)
@@ -283,27 +323,44 @@ class draw:
                 i += 1
             
             else:
-                word_gap = min_word_gap
+                word_gap = self.params.min_word_gap
+            
+            if i == 0:
+                _, _, w, h = getLayoutExtent(layouts[0][1])
+                w, h = self._fixXY(w, h)
+                il.append(layouts[0][1])
+                wsum = w
+                i += 1
 
             x = 0
             
             if self.params.text_align == "center":
-                word_gap = min_word_gap
-                x = (self.params.line_width - wsum - len(il) * min_word_gap) / 2
+                word_gap = self.params.min_word_gap
+                x = (self.params.line_width - wsum - len(il) * self.params.min_word_gap) / 2
 
             width = -word_gap
+            height = self.params.line_height
             for l in il:
-                context.translate(x, 0)
-                pangocairo.update_layout(context, l)
+                context.translate(*self._fixXY(x, 0))
+                #pangocairo.update_context(context, l.get_context())
                 pangocairo.show_layout(context, l)
-                context.translate(-x, 0)
-                _, _, w, _ = getLayoutExtent(l)
+                context.translate(*self._fixXY(-x, 0))
+                _, _, w, h = getLayoutExtent(l)
+                w, h = self._fixXY(w, h)
                 x += word_gap + w
                 width += word_gap + w
+                if h > height:
+                    height = h
+            
+            if self.params.text_align == "center":
+                width = self.params.line_width
 
             del layouts[:i]
 
-            ans.append(TextLine(surf, width, self.line_height))
+            if height != self.params.line_height:
+                print(f"Liian pitkä rivi: {height} {repr(text)}")
+
+            ans.append(TextLine(surf, width, height, indent=self.params.indent))
         
         # Aseta rivien leveystiedot yhdenmukaiseksi sarakealgoritmia varten
         if equal_widths:
@@ -319,8 +376,11 @@ class draw:
             for j in irange(i, len(lines)):
                 badness[i, j] = (self.params.page_height - sum(l.height for l in stripGaps(lines[i:j+1]))) ** 3
                 
-                if badness[i, j] < 0 or lines[i].no_page_break:
+                if badness[i, j] < 0:
                     badness[i, j] = inf
+                
+                elif lines[i].no_page_break:
+                    badness[i, j] += 1e50
 
                 elif j == len(lines):
                     badness[i, j] = 0
@@ -328,7 +388,7 @@ class draw:
         scores = np.full((len(lines)+1, len(lines)), inf)
         bps = {}
         j = len(lines)
-        for n in irange(0, len(lines) - 1):
+        for n in tqdm(irange(0, len(lines) - 1)):
             for i in irange(len(lines) - 1, 0, -1):
                 if n == 0:
                     scores[i, n] = inf
@@ -338,8 +398,7 @@ class draw:
                     min_score = badness[i, j]
                     min_bps = []
                     for x in irange(i+1, j):
-                        score = scores[x, n-1]
-                        score += badness[i, x-1]
+                        score = scores[x, n-1] + badness[i, x-1]
                         if score < min_score:
                             min_score = score
                             min_bps = [x] + bps[(x, n-1)]
@@ -348,6 +407,9 @@ class draw:
                     bps[(i, n)] = min_bps
         
         return bps[(0, len(lines) - 1)]
+    
+    def _getFont(self):
+        return self.params.fonts[self.params.font]
     
     def _stackFrame(self):
         class C:
@@ -359,6 +421,13 @@ class draw:
                 self.params = self.param_stack.pop()
         
         return C()
+    
+    def _fixXY(self, x: float, y: float) -> Tuple[float, float]:
+        if self.page_direction in "^v":
+            return x, y
+        
+        else:
+            return y, x
 
 def getLayoutExtent(layout: pango.Layout) -> Tuple[float, float, float, float]:
     e = layout.get_extents()

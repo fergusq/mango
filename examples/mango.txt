@@ -1,4 +1,7 @@
+\vspace 300
 \title Mango: taitto-ohjelma
+
+\newpage
 
 Mango on tekemäni taitto-ohjelma. Tässä dokumentissa on listattu sen ominaisuuksia.
 
@@ -6,8 +9,8 @@ Mango on tekemäni taitto-ohjelma. Tässä dokumentissa on listattu sen ominaisu
 
 -| ranskalaiset viivat saa kirjoittamalla rivin alkuun {-} ja putken
 -| numeroinnin saa kirjoittamalla rivin alkuun {1.}, {2.}, jne. ja putken
--| iso otsikko on rivin alussa {\title}, pieni {\subtitle} ja vielä pienempi {\subsubtitle}
--| sivunvaihdon voi estää komennolla {\nopagebreak}
+-| iso otsikko on rivin alussa {\\title}, pieni {\\subtitle} ja vielä pienempi {\\subsubtitle}
+-| sivunvaihdon voi estää komennolla {\\nopagebreak}
 
 \subtitle Taulukkoesimerkki
 
@@ -31,6 +34,10 @@ Soj {vI}SoptaH. | Minä syön ruokaa.
 \tablestop
 
 DuSaQDaq
+
+\subtitle Uudetrivit
+
+kissa käveli kadulla\nkoiran kanssa\nkala katseli vedestä
 
 \title SUOMALAINEN PSYKOTERAPIAIDENTITEETTI
 
