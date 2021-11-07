@@ -1,6 +1,7 @@
+import itertools
 import json
 import re
-from typing import Callable, Dict, List, Literal, NamedTuple, Union
+from typing import Callable, Dict, List, Literal, NamedTuple, Tuple, Union
 
 from .params import Parameters
 from .script import Interpreter, lexer, parseBlock
@@ -25,13 +26,16 @@ class VSpace(NamedTuple):
     height: float
     no_page_break: bool
 
+class HLine(NamedTuple):
+    no_page_break: bool
+
 class Subenvironment(NamedTuple):
     paragraphs: List["DocumentObj"]
 
 class Eval(NamedTuple):
     func: Callable[[Parameters], None]
 
-DocumentObj = Union[Paragraph, Table, VSpace, Subenvironment, Eval]
+DocumentObj = Union[Paragraph, Table, VSpace, Subenvironment, Eval, HLine]
 Chapter = List[DocumentObj]
 
 def jsonToDocument(code: str) -> List[Chapter]:
@@ -101,6 +105,11 @@ def evalScript(code: str) -> List[Chapter]:
     fs["subtitle"] = pgf("subtitle")
     fs["subsubtitle"] = pgf("subsubtitle")
     fs["subsubsubtitle"] = pgf("subsubsubtitle")
+    fs["cpg"] = pgf("ctext")
+    fs["ctitle"] = pgf("ctitle")
+    fs["csubtitle"] = pgf("csubtitle")
+    fs["csubsubtitle"] = pgf("csubsubtitle")
+    fs["csubsubsubtitle"] = pgf("csubsubsubtitle")
 
     def newPage():
         if current_chapter_stack[-1]:
@@ -113,27 +122,30 @@ def evalScript(code: str) -> List[Chapter]:
         current_chapter_stack[-1].append(VSpace(h, not pb))
 
     fs["vspace"] = vspace
+    fs["hline"] = lambda pb=True: current_chapter_stack[-1].append(HLine(not pb))
 
     table_stack: List[List[List[DocumentObj]]] = []
 
     def tablestart():
         table_stack.append([])
+        current_chapter_stack.append([])
     
     def tablestop(pb=True):
+        row = current_chapter_stack.pop()
+        table_stack[-1].append(row)
         rows = table_stack.pop()
         current_chapter_stack[-1].append(Table(rows, not pb))
     
-    def rowstart():
-        current_chapter_stack.append([])
-    
-    def rowstop():
+    def nextrow():
         row = current_chapter_stack.pop()
         table_stack[-1].append(row)
+        current_chapter_stack.append([])
     
     fs["tablestart"] = tablestart
     fs["tablestop"] = tablestop
-    fs["rowstart"] = rowstart
-    fs["rowstop"] = rowstop
+    fs["nextrow"] = nextrow
+
+    fs["row"] = lambda *cols: current_chapter_stack[-1].append(Table([[Paragraph.fromText(col, "text") for col in cols]], False))
     
     fs["set"] = lambda var, val: current_chapter_stack[-1].append(Eval(lambda params: setattr(params, var, val)))
     fs["addfont"] = lambda var, name: current_chapter_stack[-1].append(Eval(lambda params: params.addFont(var, name)))
@@ -148,7 +160,15 @@ def evalScript(code: str) -> List[Chapter]:
     fs["envstart"] = envstart
     fs["envstop"] = envstop
 
-    fs["splitchars"] = lambda string: " ".join(string)
+    def splitchars(string):
+        string = " ".join(string)
+        for open, close in MARKUP_CODES.keys():
+            string = string.replace(" ".join(open), open)
+            string = string.replace(" ".join(close), close)
+        
+        return string
+
+    fs["splitchars"] = splitchars
 
     tokens = lexer(code)
     #print(tokens)
@@ -311,11 +331,27 @@ def parseChapter(lines: List[str]) -> Chapter:
 def stripMarkup(text: str) -> str:
     return re.sub(r"[{}\[\]]", "", text)
 
+MARKUP_CODES: Dict[Tuple[str, str], Tuple[str, str]] = {
+    ("[", "]"): ("<i>", "</i>"),
+    ("*{", "}*"): ("<b>", "</b>"),
+    ("~{", "}~"): ("<s>", "</s>"),
+
+    ("^{", "}^"): ("<sup>", "</sup>"),
+    ("_{", "}_"): ("<sub>", "</sub>"),
+
+    ("%{", "}%"): ("<span font_variant=\"smallcaps\" font_features=\"'c2sc' 1, 'smcp' 1\">", "</span>"),
+    ("${", "}$"): ("<span color=\"grey\">", "</span>"),
+}
+
+MARKUP_CODE_DICT = {m: c for k, v in MARKUP_CODES.items() for m, c in zip(k, v)}
+MARKUP_CODE_LIST = list(sorted(MARKUP_CODES, key=lambda t: -len(t[0])))
+
 def fixMarkup(text: str) -> str:
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    text = _balance(text, "{", "}")
-    text = _balance(text, "[", "]")
-    text = _substituteMarkup(text, {"{": "<b>", "}": "</b>", "[": "<i>", "]": "</i>"})
+    for open, close in MARKUP_CODE_LIST:
+        text = _balance(text, open, close)
+    
+    text = _substituteMarkup(text)
     return text
 
 def _balance(text: str, open: str, close: str) -> str:
@@ -326,13 +362,16 @@ def _balance(text: str, open: str, close: str) -> str:
             i += 2
             continue
 
-        if text[i] == open:
+        if text[i:].startswith(open):
             d += 1
+            i += len(open)
         
-        elif text[i] == close:
+        elif text[i:].startswith(close):
             d -= 1
+            i += len(close)
         
-        i += 1
+        else:
+            i += 1
     
     while d > 0:
         text += close
@@ -347,7 +386,7 @@ def _balance(text: str, open: str, close: str) -> str:
     
     return text
 
-def _substituteMarkup(text: str, codes: Dict[str, str]) -> str:
+def _substituteMarkup(text: str) -> str:
     ans = ""
     i = 0
     while i < len(text):
@@ -356,8 +395,13 @@ def _substituteMarkup(text: str, codes: Dict[str, str]) -> str:
 
             i += 2
         
+        for code in itertools.chain(*MARKUP_CODE_LIST):
+            if text[i:].startswith(code):
+                ans += MARKUP_CODE_DICT[code]
+                i += len(code)
+                break
         else:
-            ans += codes.get(text[i], text[i])
+            ans += text[i]
             i += 1
     
     return ans
@@ -393,7 +437,11 @@ def addBalance(text: str) -> str:
     return " ".join(new_words)
 
 def getBalance(text: str) -> str:
-    return _getBalance(text, "{", "}") + _getBalance(text, "[", "]")
+    ans = ""
+    for open, close in MARKUP_CODE_LIST:
+        ans += _getBalance(text, open, close)
+    
+    return ans
 
 def _getBalance(text: str, open: str, close: str) -> str:
     i = 0
@@ -403,12 +451,15 @@ def _getBalance(text: str, open: str, close: str) -> str:
             i += 2
             continue
 
-        if text[i] == open:
+        if text[i:].startswith(open):
             d += 1
+            i += len(open)
         
-        elif text[i] == close:
+        elif text[i:].startswith(close):
             d -= 1
+            i += len(close)
         
-        i += 1
+        else:
+            i += 1
     
     return d*open

@@ -16,6 +16,7 @@ class Parameters:
     min_word_gap: float
     indent: float
     text_align: Literal["justify", "center"]
+    smart_page_breaks = True
 
     font: str
     fonts: Dict[str, pango.FontDescription]

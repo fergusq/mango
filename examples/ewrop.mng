@@ -1,10 +1,20 @@
 set("min_word_gap", 0)
 addfont("tlhng", "tlhIngngutlh HanDI' mIng")
 set("font", "tlhng")
-title:| 󰧱 󰚰
+title:splitchars:| 󰧱󰚰
 
 set("text_align", "center")
 pg:splitchars:| 󰖴󰝫󰨌󰕟󰈈󰈦󰨧
 set("text_align", "justify")
 
-pg:splitchars:| 󰕯󰝙󰢏󰔳󰞓󰧄󰎄󰚣󰕷󰄇󰣼󰃻󰍱󰓍󰕠󰉁󰦃󰧤󰑟󰑚󰎩󰈌󰅹󰚰󰎚󰡶󰊊󰕔󰨛󰇓󰎋󰕞󰐲󰌒󰂄󰜈󰁊󰈌󰁀󰧜󰍒󰂼󰕞󰅄󰧱󰚰󰄇󰓶󰕞󰏫󰄦󰂸󰁏󰦫󰣹󰃹󰄇󰏀󰝓󰆟󰃴󰎚󰊊󰊊󰂠󰎼󰝫󰧤󰧱󰚰󰑐󰎚󰄬󰢗󰍒󰂥󰝫
+subtitle:splitchars:| 󰑋󰌒
+
+pg:splitchars:| 󰕯󰝙󰢏󰔳󰞓󰧄󰎄󰚣󰕷󰄇󰣼󰃻󰍱󰓍󰕠󰉁󰦃󰧤󰑟󰑚󰎩󰈌󰅹󰚰󰎚󰡶󰊊󰕔󰨛󰇓󰎋󰕞󰐲󰌒󰂄󰜈󰁊󰈌󰁀󰧜󰍒󰂼󰕞󰅄󰧱󰚰󰄇󰓶󰕞󰏨󰄦󰂸󰁏󰦫󰣹󰃹󰄇󰏀󰝓󰆟󰃴󰎚󰊊󰂠󰎼󰝫󰧤󰧱󰚰󰑐󰎚󰄬󰢗󰍒󰂥󰝫
+
+subtitle:splitchars:| 󰝓󰆟󰄇
+
+pg:splitchars:| 󰟟󰤄󰅥󰄇󰋋󰂇󰂸󰀠󰝙󰧝󰡦󰌶󰏨󰧱󰚰󰉁󰉈󰡮󰄂󰁏󰄔󰐢󰙥󰀱󰝓󰆟󰧵󰞿󰅽󰋛󰄁󰃹󰨕󰏎󰝓󰆟󰅞󰛤󰧜󰄇󰈀󰗸󰇉󰎊󰓺󰃻󰃎󰨛󰎑󰏎󰏀󰄇󰇉󰎊󰂒󰄁󰋵󰍪󰘿󰡔󰌀󰑐󰄇󰇉󰐪󰧝󰡦󰌶󰏨
+pg:splitchars:| 󰅽󰖀󰍪󰀱󰃥󰂸󰟟󰤄󰅥󰗄󰏎󰙧󰕅󰈑󰝙󰍞󰤔󰎬󰍳󰊉󰎚󰠱󰘩󰃎󰑐󰎚󰊃󰍪󰎑󰡖󰏎󰇳󰛜󰧝󰡦󰌶󰏨󰅽󰓱󰧜󰝓󰆟󰑯󰕞
+pg:splitchars:| 󰍶󰅷󰄇󰍉󰝙󰣪󰇉󰤔󰑙󰐇󰆘󰧝󰡦󰌶󰏨󰔔󰄦󰎊󰏨󰄦󰣼󰇒󰊃󰣢󰔿󰇉󰤔󰃹󰗢󰎊󰙘󰘩󰀱󰧝󰡦󰌶󰏨
+pg:splitchars:| 󰀱󰂃󰄦󰤔󰕞󰄁󰧵
+

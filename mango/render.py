@@ -13,7 +13,7 @@ import pangocffi as pango
 from tqdm.cli import tqdm
 from voikko import libvoikko
 
-from .document import (Chapter, DocumentObj, Eval, Paragraph, Subenvironment,
+from .document import (Chapter, DocumentObj, Eval, HLine, Paragraph, Subenvironment,
                        Table, VSpace, fixMarkup, stripMarkup)
 from .params import Parameters
 
@@ -56,6 +56,23 @@ class ParagraphGap(Line):
             context.set_source_rgb(1 if self.no_page_break else 0, 0, 0)
             context.rectangle(*fxy(x, y), *fxy(10, 10))
             context.fill()
+
+class HorizontalLine(Line):
+    def __init__(self, width: float, height: float, no_page_break=False):
+        super().__init__(width, height, no_page_break)
+        self.is_content_line = False
+
+    def draw(self, context: cairo.Context, x: float, y: float, fxy: FixXY):
+        super().draw(context, x, y, fxy)
+        if debug:
+            context.set_source_rgb(1 if self.no_page_break else 0, 0, 1)
+            context.rectangle(*fxy(x, y), *fxy(10, 10))
+            context.fill()
+       
+        context.set_source_rgb(0.8, 0.8, 0.8)
+        context.move_to(*fxy(x, y+self.height/2))
+        context.line_to(*fxy(x + self.width, y+self.height/2))
+        context.stroke()
 
 def stripGaps(lines: List[Line]) -> List[Line]:
     i = 0
@@ -113,10 +130,15 @@ class ColumnLine(Line):
             x += self.column_gap
 
 TITLES = {
-    "title": (0, 20, 26, "center"),
+    "ctitle": (0, 20, 26, "center"),
+    "title": (0, 20, 26, "justify"),
+    "csubtitle": (1, 15, 21, "center"),
     "subtitle": (1, 15, 21, "justify"),
+    "csubsubtitle": (2, 13, 19, "center"),
     "subsubtitle": (2, 13, 19, "justify"),
+    "csubsubsubtitle": (3, 12, 18, "center"),
     "subsubsubtitle": (3, 12, 18, "justify"),
+    "ctext": (-1, 10, 16, "center"),
     "text": (-1, 10, 16, "justify"),
 }
 
@@ -183,6 +205,10 @@ class draw:
                 
                 y += pg_gap
             
+            self.surf.show_page()
+            self.page += 1
+        
+        if self.page%2 == 0:
             self.surf.show_page()
             self.page += 1
     
@@ -254,6 +280,9 @@ class draw:
             
             elif isinstance(pg, VSpace):
                 lines = [Line(self.params.line_width, pg.height or self.params.line_height)]
+            
+            elif isinstance(pg, HLine):
+                lines = [HorizontalLine(self.params.line_width, self.params.line_height)]
                 
             elif isinstance(pg, Eval):
                 pg.func(self.params)
@@ -371,6 +400,17 @@ class draw:
         return ans
     
     def calculatePageBreaks(self, lines: List[Line]):
+        if not self.params.smart_page_breaks:
+            h = 0
+            ans = []
+            for i, line in enumerate(lines):
+                h += line.height
+                if h > self.params.page_height:
+                    ans += [i]
+                    h = 0
+            
+            return ans
+
         badness = np.full((len(lines)+1, len(lines)+1), inf)
         for i in irange(0, len(lines) - 1):
             for j in irange(i, len(lines)):

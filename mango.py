@@ -62,6 +62,9 @@ def main():
     args.width = args.width * math.sqrt(2)**3
     args.height = args.height * math.sqrt(2)**3
 
+    if not args.page_dir in "v^":
+        args.width, args.height = args.height, args.width
+
     if args.infile == "-":
         text = sysconf.stdin.read()
     

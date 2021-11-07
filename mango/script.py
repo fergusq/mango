@@ -145,6 +145,10 @@ BUILTINS: Dict[str, Callable] = {
     "/": lambda a, b: a / b,
     "%": lambda a, b: a % b,
     "print": lambda *a: print(*a),
+    "replace": lambda a, b, s: s.replace(a, b),
+    "sub": re.sub,
+    "true": lambda: True,
+    "false": lambda: False,
 }
 
 class Frame(NamedTuple):
